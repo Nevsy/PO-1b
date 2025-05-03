@@ -1,0 +1,79 @@
+body {
+	background-color: #171a1a;
+}
+
+*, *:after, *:before {
+	color: rgb(246, 242, 234);
+	font-family: Inter;
+	font-size: .85rem;
+	padding: 0;
+	margin: 0;
+}
+
+.navbar {
+	height: 30px;
+	background-color: rgb(221, 227, 228);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	
+	#status {
+		color: black;
+	}
+}
+
+.main {
+	height: calc(100vh - 30px);
+	width: 100vw;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+
+	&.connected {
+		display: none;
+		flex-direction: column;
+		gap: 10px;
+		
+		#noodknop_txt {
+			display: none;
+		}
+		.slider {
+			output {
+				transform: translateY(-5px);
+			}
+		}
+		#joy_div {
+			border: 2px solid white;
+			border-radius: 5px;
+			
+			position: relative;
+			&::after, &::before {
+				width: 141.4;
+				height: 1px;
+				background-color: white;
+				rotate: 45deg;
+			}
+			&::before {
+				rotate: -45deg;
+			}
+		}
+		.joy_span {
+			margin-top: 20px;
+			font-size: 1rem;
+			font-weight: 600;
+		}
+	}
+	
+	&.calib {
+		display: none;
+		flex-direction: column;
+		gap: 10px;
+	}
+}
+
+button {
+	color: black;
+	padding-block: 5px;
+	padding-inline: 10px;
+	outline: none;
+}

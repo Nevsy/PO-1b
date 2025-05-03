@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<script src="index.js" defer></script>
+	<link rel="stylesheet" href="style.css">
+	<title>:)</title>
+</head>
+<body>
+
+<div class="navbar">
+	<h3 id="status">Status: Disconnected</h3>
+</div>
+<div class="disconnected main" id="disconnected">
+	<button onclick="connect_socket()">Connect</button>
+</div>
+<div class="connected main" id="connected">
+	<div class="buttons">
+		<button onclick="sendCommand('controle_overnemen')">Controle Overnemen</button>
+		<button onclick="sendCommand('manual_pickup')">Manual Pickup</button>
+		<br>
+		<button onclick="calib()" id="start_calib">Calibration</button>
+		<button onclick="sendCommand('start')">Start Spel</button>
+	</div>
+	<span id="noodknop_txt">Noodknop geactiveerd!!</span>
+	<button onclick="sendCommand('noodknop')">Noodknop</button>
+	<span class="joy_span">Joystick</span>
+	<div id="joy_div" style="width:200px;height:200px;margin-bottom:20px;"></div>
+</div>
+<div class="calib main" id="calib">
+	<span id="calib_span">
+		Calibrating LDRs for <b id="calib_bold">White</b>
+	</span>
+	<button id="calib_btn" onclick="calib()">Start Calibration</button>
+</div>
+
+</body>
+</html>
