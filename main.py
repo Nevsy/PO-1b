@@ -1,13 +1,3 @@
-	# todo:
-		#* fix website manuele controle
-		#* testen!
-		#* fix led rood frequentie...
-
-		#* fix botsingssensoren + torentjes sensibiliteit
-		#* fix afstandsensor positie
-		#* fix loskomende bouten
-		#* pinnen aan motoren solderen
-
 import socketpool
 import wifi
 import time
@@ -48,7 +38,7 @@ websocket = None
 led_bord = digitalio.DigitalInOut(board.LED)
 led_bord.direction = digitalio.Direction.OUTPUT
 
-led_r = pwmio.PWMOut(board.GP19,frequency=50) #! 50 is te laag!!
+led_r = pwmio.PWMOut(board.GP19,frequency=50) #! 50 is te laag maar verplicht
 led_g = pwmio.PWMOut(board.GP20,frequency=1000)
 led_b = pwmio.PWMOut(board.GP17,frequency=1000)
 
@@ -60,12 +50,12 @@ switch_2 = digitalio.DigitalInOut(board.GP4)
 ldr_r = AnalogIn(board.GP28) #LDR Rechts
 ldr_l = AnalogIn(board.GP26) #LDR Links
 ldr_a = AnalogIn(board.GP27) #LDR Achter
-#ldr_a_treshold = 15000
-ldr_a_treshold = 11000 #* param
-#ldr_l_threshold = 10000
-ldr_l_threshold = 8000 #* param
-#ldr_r_threshold = 8500
-ldr_r_threshold = 4000 #* param																								
+ldr_a_treshold = 15000
+# ldr_a_treshold = 11000 #* param
+ldr_l_threshold = 10000
+# ldr_l_threshold = 8000 #* param
+ldr_r_threshold = 8500
+# ldr_r_threshold = 4000 #* param
 diff_threshold = 2000 #* param
 
 calib_phase = "none"
@@ -93,33 +83,38 @@ uart = busio.UART(board.GP0, board.GP1, baudrate=9600)
 
 sonar_threshold = 15 #* param
 AFST_DIST_ARR_SIZE = 5 #* param
-sonarDistanceLast = [80] * AFST_DIST_ARR_SIZE
+sonarDistanceLast = [80 for i in range(AFST_DIST_ARR_SIZE)]
 
 # Servo
 pwm_servo = pwmio.PWMOut(board.GP2, duty_cycle=0, frequency=50)
 servo = servo.Servo(pwm_servo, min_pulse=460, max_pulse=2500)
 ref_tijd_servo = time.monotonic()
+SERVO_PASSIVE = 40 #* param
 STARTANGLE = 0 #* param
-ENDANGLE = 150 #* param
-servo.angle = STARTANGLE
+ENDANGLE = 118 #* param
+servo.angle = SERVO_PASSIVE
 last_val_servo = STARTANGLE
 servo_action = 0
 INACTIVE = 0
 UP = 1
 DOWN = 2
 pickup_manual = False
+BOTSINGS = 0
+LINE = 1
+stopped_bc = None
 
 # MARK: INIT path
 FORWARDS = 0
 LEFT = 1
 RIGHT = 2
-PICKUP = 3
-ONE_EIGHTY = 4
+ONE_EIGHTY = 3
+PICKUP = 4
 EOS = 5 # end of sequence
-#path_seq = [0, 1, 0, 2, 1, 3, 1, 3, 0, EOS] # complex test
-path_seq = [0, 2, 0, 1, 0, 0, 1, EOS] # turning test
-#path_seq = [FORWARDS, FORWARDS, LEF3T, FORWARDS, RIGHT, FORWARDS, LEFT, FORWARDS, LEFT, FORWARDS, FORWARDS, FORWARDS, EOS]
-#path_seq = [0, 3, EOS]
+
+#path_seq = [0, 0, PICKUP, 2, 0, 1, 0, PICKUP, ONE_EIGHTY, 0, EOS]
+path_seq = [0, PICKUP, EOS]
+#path_seq = [0, 2, 0, 0, 0, 4, 3, 0, 2, 0, 4, 1, 0, 2, 0, 0, 2, 0, 4, 0, 2, 0, 4, 3, 0, 1, 0, 2, 0, 4, 1, 0, 0, 4, 1, 0, 0, 0, 0, 0, 5]
+
 path_seq_idx = 0
 current_action = path_seq[path_seq_idx]
 auto_control = False #* param
@@ -132,13 +127,15 @@ DIDNT_DRIVE = 0
 DRIVING = 1
 DROVE = 2
 
+one_eighty_once = False
+
 manual_control_direction = "F"
 manual_control_speed = 0
 
 stop_flag = False
 
 continue_forward_time = .5 #* param
-cont_turn_time = .25 #* param
+cont_turn_time = .0 #* param
 
 # MARK: WEBSOCK
 # WEBSOCKET CONNECT FUN
@@ -200,11 +197,12 @@ def drive_backwards():
 
 def pickup(ref_tijd, action, last_val):
 	if action == UP and last_val < ENDANGLE: # and time.monotonic() > ref_tijd + 0.8:
-		last_value_return = last_val + 4
-		#print(f"{ref_tijd} {last_value_return}")
+		last_value_return = last_val + 15
+		#print(f"{last_value_return}")
 		servo.angle = last_value_return
 		return last_value_return
 	if last_val >= ENDANGLE:
+		time.sleep(1.0)
 		last_value_return = STARTANGLE
 		servo.angle = STARTANGLE
 		return last_value_return
@@ -258,7 +256,7 @@ def get_back_to_garage_idx(path):
 	for i in range(len(path) - 1):
 		# if we still have to pickup anything, we're not going back to the garage
 		if path[i] == PICKUP:
-			last_idx = i
+			last_idx = i + 1
 	return last_idx
 
 to_garage_idx = get_back_to_garage_idx(path_seq)
@@ -322,6 +320,11 @@ while True:
  
 	if auto_control and not stop_flag:
 		if calib_phase != "done": # !! testing mode
+			next_action = path_seq[path_seq_idx + 1]
+			if (next_action == PICKUP and (current_action != LEFT and current_action != RIGHT)) \
+       			or (current_action == FORWARDS and next_action == FORWARDS and path_seq[path_seq_idx + 2] == PICKUP):
+				servo.angle = STARTANGLE
+			print(led_state)
 			# MARK: AUTO DRIVE
 			if current_action == LEFT or current_action == RIGHT: # must turn
 				print(f"Turning, ldr_l: {ldr_l.value}, ldr_r: {ldr_r.value}")
@@ -368,18 +371,28 @@ while True:
 			if current_action == FORWARDS: # if ipv elif om een tick te winnen bij eventuele verandering
 				led_state = 0
 				if path_seq[path_seq_idx + 1] == PICKUP:
-					print(f"Driving forwards, botsings: {not switch_1.value} {not switch_2.value}")
+					print(f"Driving forwards, botsings: {not switch_1.value} {not switch_2.value}, ldr_a: {ldr_a.value}")
 				else:
 					print(f"Driving forwards, ldr_a: {ldr_a.value}")
 
 				if driving == False:
 					driving = True
 					ldr_reftijd = time.monotonic()
-    
-				if ((path_seq[path_seq_idx + 1] == PICKUP and (not switch_1.value or not switch_2.value)) \
-        			or (path_seq[path_seq_idx + 1] != PICKUP and ldr_a.value < ldr_a_treshold)) \
-               		and time.monotonic() - ldr_reftijd > 1:
-					# !! stopt alleen voor pickup bij torentjes !!
+
+				switch_bool = (not switch_1.value or not switch_2.value)
+				ldr_bool = ldr_a.value < ldr_a_treshold
+				time_bool = ldr_reftijd + 1.5 < time.monotonic()
+				# path seq at current index can only differ from current action due to being
+				# redirected by pickup, in which case we want to stop no matter when 
+				prev_was_pickup_time_bool = (path_seq[path_seq_idx] == PICKUP)
+				if ((next_action == PICKUP and (ldr_bool)) \
+        			or (next_action != PICKUP and ldr_bool)) \
+               		and (time_bool or prev_was_pickup_time_bool):
+					if next_action == PICKUP:
+						if ldr_bool:
+							stopped_bc = LINE
+						elif switch_bool:
+							stopped_bc = BOTSINGS
 					path_seq_idx += 1
 					if path_seq_idx > len(path_seq) + 1:
 						print("Arrived at the end of the sequence!")
@@ -392,33 +405,43 @@ while True:
 					drive_forwards()
 			if current_action == PICKUP:
 				motorcontrol(False, False, 0, 0)
+				led_state = 2
 				if servo_action == INACTIVE:
 					ref_tijd_servo = time.monotonic() - 0.05
+					servo.angle = STARTANGLE
 					servo_action = UP
 				last_val_servo = pickup(ref_tijd_servo, servo_action, last_val_servo)
 				if last_val_servo == STARTANGLE:
 					servo_action = INACTIVE
 				ref_tijd_servo = time.monotonic()
 				if servo_action == INACTIVE:
-					path_seq_idx += 1
-					if path_seq_idx > len(path_seq) + 1:
-						print("Arrived at the end of the sequence!")
-						stop_flag = True
-					print("going to next index: " + str(path_seq_idx))
-					current_action = path_seq[path_seq_idx]
-					print("action: " + str(current_action))
-					while ldr_a.value < ldr_a_treshold:
-						# !! blijft in alle situaties vooruit rijden
-						drive_forwards()
+					servo.angle = SERVO_PASSIVE
+					if stopped_bc == BOTSINGS:
+						current_action = FORWARDS
+					elif stopped_bc == LINE:
+						path_seq_idx += 1
+						print("going to next index: " + str(path_seq_idx))
+						current_action = path_seq[path_seq_idx]
+						print("action: " + str(current_action))
 			if current_action == ONE_EIGHTY:
-				if ldr_a.value < ldr_a_treshold:
-					path_seq_idx += 1
-					if path_seq_idx > len(path_seq) + 1:
-						print("Arrived at the end of the sequence!")
-						stop_flag = True
-					print("going to next index: " + str(path_seq_idx))
-					current_action = path_seq[path_seq_idx]
-					print("action: " + str(current_action))
+				if driving == False:
+					driving = True
+					ldr_reftijd = time.monotonic()
+    
+				if (ldr_r.value < ldr_r_threshold or ldr_l.value < ldr_l_threshold) and ldr_reftijd + 1 < time.monotonic():
+					if one_eighty_once == True:
+						driving = False
+						one_eighty_once = False
+						path_seq_idx += 1
+						if path_seq_idx > len(path_seq) + 1:
+							print("Arrived at the end of the sequence!")
+							stop_flag = True
+						print("going to next index: " + str(path_seq_idx))
+						current_action = path_seq[path_seq_idx]
+						print("action: " + str(current_action))
+					else:
+						one_eighty_once = True
+						ldr_reftijd = time.monotonic()
 				else: motorcontrol(False, True, 50, 50)
 			if current_action == EOS:
 				motorcontrol(True, True, 0, 0)
@@ -453,9 +476,9 @@ while True:
 			if servo_action == INACTIVE:
 				ref_tijd_servo = time.monotonic() - 0.05
 				servo_action = UP
-				last_val_servo = 0
+				last_val_servo = STARTANGLE
 			last_val_servo = pickup(ref_tijd_servo, servo_action, last_val_servo)
-			if last_val_servo == 0:
+			if last_val_servo == STARTANGLE:
 				servo_action = INACTIVE
 			ref_tijd_servo = time.monotonic()
 			if servo_action == INACTIVE:
@@ -499,7 +522,15 @@ while True:
 	'''
   
 	# RGB LED HANDELING
-	if path_seq_idx > to_garage_idx and auto_control: # GARAGE -> blauw ctu
+	if led_state == 2: # VERZAMELING -> oranje aan uit
+		led_b.duty_cycle = 0
+		if led_bord.value:
+			led_r.duty_cycle = MAX_PWM
+			led_g.duty_cycle = math.floor(MAX_PWM / 2)
+		else:
+			led_r.duty_cycle = 0
+			led_g.duty_cycle = 0
+	elif path_seq_idx >= to_garage_idx and auto_control: # GARAGE -> blauw ctu
 		led_r.duty_cycle = 0
 		led_g.duty_cycle = 0
 		led_b.duty_cycle = MAX_PWM
@@ -515,14 +546,6 @@ while True:
 			led_r.duty_cycle = MAX_PWM
 		else:
 			led_r.duty_cycle = 0
-	elif led_state == 2: # VERZAMELING -> oranje aan uit
-		led_b.duty_cycle = 0
-		if led_bord.value:
-			led_r.duty_cycle = MAX_PWM
-			led_g.duty_cycle = math.floor(MAX_PWM / 2)
-		else:
-			led_r.duty_cycle = 0
-			led_g.duty_cycle = 0
 	else:
 		raise Exception("rgbOptionError: index out of bounds")
 
@@ -535,9 +558,9 @@ while True:
 	elif distance < sonar_threshold:
 		stop_flag = nood_stop("afstandsensor")
 	
-	# loop duration calculation w/o sleep
+	#loop duration calculation w/o sleep
 	# loop_end = time.monotonic()
 	# loop_duration = loop_end - loop_start
 	# print(f"Loop duration: {loop_duration} seconds")
 	
-	time.sleep(0.05)
+	time.sleep(0.04)
