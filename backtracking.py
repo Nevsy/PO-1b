@@ -1,8 +1,39 @@
 import numpy as np
 
-ACCEPT = "accept"
-ABANDON = "abandon"
-CONTINUE = "continue"
+ACCEPT = 0
+ABANDON = 1
+CONTINUE = 2
+
+# Directions
+UP, LEFT, DOWN, RIGHT = 0, 1, 2, 3 # ordered
+DIR_PAIRS = [{UP, DOWN}, {LEFT, RIGHT}]
+DIRS = [(0, -1), (-1, 0), (0, 1), (1, 0)]  # UP, LEFT, DOWN, RIGHT
+
+#* Parameter
+INIT_DIRECTION = UP
+
+# Actions
+FORWARDS = 0
+LEFT_TURN = 1
+RIGHT_TURN = 2
+ONE_EIGHTY = 3
+PICKUP = 4
+EOS = 5
+
+#* Parameters
+timeStraight = 2
+timeTurn = 5 # turn itself + straight
+time180 = 7
+
+# lookup table
+action_to_time = { 
+	LEFT_TURN: timeTurn,
+	RIGHT_TURN: timeTurn,
+	ONE_EIGHTY: time180,
+	FORWARDS: timeStraight,
+	PICKUP: 0,
+	EOS: 0
+}
 
 #makes the board 
 def init_bord(n: int, m:int):
@@ -67,7 +98,7 @@ def getLegealNeighbour(x: int, y: int, board: list):
     n = len(board[0])
 
     if not( y + 1 > m-1):
-        if not(board[y + 1][x] == -2): # ! ou alors tu peux utiliser un enum (RED = -2) ou alors utiliser la liste de rouges
+        if not(board[y + 1][x] == -2):
             neigbours.add((x, y+1))
 
     if not(y-1 < 0):
@@ -92,41 +123,77 @@ def visualise_solution(route:list, board:list):
 
     return board
 
-#calculates the time needed to do the route
-def calculateTime(route): #route in format route = [(0,0), (1,0, (1,1), ...)]
-    
-    timeStraight = 2
-    timeTurn = 10
+def path_to_actions(path: list, initOrientation: int, nodes: set, going_back: bool):
+	"""
+	Converts a path to an action sequence for a vehicle.
+	"""
+	if len(path) <= 1:
+		return []
 
-    direction = "" # ! Direction de depart non imposée?
-    total_time = 0
+	orientation = initOrientation
+	actions = []
 
+	for i in range(len(path) - 1):
+		current = path[i]
+		next_pos = path[i + 1]
 
-    if len(route) == 1: #just the start position isnt a route
-        return total_time
-    
-    if len(route) >= 2: #determines the start orientation
-        for i in range(1, len(route)):
-            #print(f"x change = {route[i][0] - route[i-1][0]}, y change = {route[i][1] - route[i-1][1]}")
+		x1, y1 = current
+		x2, y2 = next_pos
 
-            if route[i][0] - route[i-1][0] == 0: #if x coor stays he same then direction is vertial
+		# Determine movement direction
+		if x1 == x2:
+			if y1 < y2:
+				new_orientation = UP
+			else:
+				new_orientation = DOWN
+		elif y1 == y2:
+			if x1 < x2:
+				new_orientation = RIGHT
+			else:
+				new_orientation = LEFT
+		else:
+			raise Exception("Invalid path: weird movement")
 
-                if direction == "V" or direction == "": #if going vertical and x doesn't chagne => straight
-                    total_time += timeStraight
-                else:
-                    total_time += timeTurn #else => turn
-                direction = "V"
+		# Determine turn action
+		if new_orientation == orientation:
+			pass  # no turn needed
+		elif {orientation, new_orientation} in DIR_PAIRS:
+			actions.append(ONE_EIGHTY)
+		elif new_orientation - orientation == 1 or (orientation == RIGHT and new_orientation == UP):
+			actions.append(LEFT_TURN)
+		elif new_orientation - orientation == -1 or (orientation == UP and new_orientation == RIGHT):
+			actions.append(RIGHT_TURN)
+		else:
+			print(f"orientation: {orientation}, new_orientation: {new_orientation}")
+			raise Exception("Unexpected orientation change.")
 
-            if route[i][1] - route[i-1][1] == 0:#if the y doesn't change then direction is horizonta
+		# Move forward
+		actions.append(FORWARDS)
+		orientation = new_orientation
 
-                if direction == "H" or direction == "": #if going vertical and x doesn't chagne => straight
-                    total_time += timeStraight
-                else:
-                    total_time += timeTurn #else => turn
- 
-                direction = "H" 
-            
-    return total_time
+		# Check if we just arrived at a node (but not the start, neither while going back)
+		if next_pos in nodes and not going_back:
+			actions.append(PICKUP)
+
+	return actions
+
+def calculateTime(path: list, initOrientation: int):
+	"""
+	We compute the time cost of some path
+	Depends mainly on the amount of turns
+	"""
+
+	totalTime = 0
+
+	if len(path) <= 1:
+		return totalTime
+
+	actions = path_to_actions(path, initOrientation, set(), True)
+
+	for action in actions:
+		totalTime += action_to_time.get(action)
+
+	return totalTime
 
 def examineD1 (greenToCatch: set, partial_solution: list, fastest_time: float):
 
@@ -135,19 +202,19 @@ def examineD1 (greenToCatch: set, partial_solution: list, fastest_time: float):
         greenToCatch.remove(partial_solution[-1])
         #print(f"Green to catch got changed to: {greenToCatch}")
     
-    partial_sol_time = calculateTime(partial_solution) # ! ne pas calculer la longueur jusqu'a 3 fois par appel
+    partial_sol_time = calculateTime(partial_solution, initOrientation=INIT_DIRECTION)
     
     if partial_sol_time > fastest_time: #if the time needed for the route is bigger than the quickest rouyte then abandon 
         return [ABANDON, greenToCatch, fastest_time]
     
-    if partial_solution[-1] in partial_solution[:-1]: # ! on ne peut jamais retourner sur le meme chemin?
+    if partial_solution[-1] in partial_solution[:-1]:
         return [ABANDON, greenToCatch, fastest_time]
     
     if partial_sol_time <= fastest_time and len(greenToCatch) > 0: #checks if the route is sill ok and if there are still some towers to be caught
         return[CONTINUE, greenToCatch, fastest_time]
     
     if partial_sol_time <= fastest_time and len(greenToCatch) == 0: #sees if the current route is quicker than the quickest and if all the green has been caught
-        fastest_time = calculateTime(partial_solution)
+        fastest_time = calculateTime(partial_solution, initOrientation=INIT_DIRECTION)
         return [ACCEPT, greenToCatch,fastest_time] 
     
 
@@ -179,7 +246,7 @@ def solveD1 (board: list, greenToCatch: list, max_time: float, partial_solution:
     return all_solutions
 
 def FindPath(board: list, startcoordinates:tuple, finishcoordinates: tuple, visualise: bool):
-    solution1 = solveD1(board, getGreen(board), 999999, [startcoordinates], [])[-1] # ! pq ne pas skip putGreen suivi de getGreen?
+    solution1 = solveD1(board, getGreen(board), 999999, [startcoordinates], [])[-1]
     solution2 = solveD1(board, [finishcoordinates], 9999999, [solution1[-1]], [])[-1]
     #print(f"solution 1 {solution1} solution 2 {solution2}")
 
